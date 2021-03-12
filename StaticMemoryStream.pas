@@ -7,19 +7,18 @@
 -------------------------------------------------------------------------------}
 {===============================================================================
 
-  StaticMemoryStream
+  Static memory stream
 
-    Very simple class intended to provide a way of accessing general memory
+    Very simple classes intended to provide a way of accessing general memory
     location using usual streams.
-    Unlike TMemoryStream, this implementation will not realocate the memory
-    (an exception is raised when attempted), so it is safe to use it on
-    pointers from external sources (libraries, OS, ...).
+    They are designed to be safe for use on pointers from external sources
+    (libraries, OS, ...).
 
-  Version 1.0 (2017-08-01)
+  Version 1.1 (2021-03-12)
 
-  Last change 2020-08-02
+  Last change 2021-03-12
 
-  ©2017-2020 František Milt
+  ©2017-2021 František Milt
 
   Contacts:
     František Milt: frantisek.milt@gmail.com
@@ -37,6 +36,7 @@
 
   Dependencies:
     AuxTypes - github.com/TheLazyTomcat/Lib.AuxTypes
+    StrRect  - github.com/TheLazyTomcat/Lib.StrRect
 
 ===============================================================================}
 unit StaticMemoryStream;
@@ -59,8 +59,6 @@ type
 
   ESMSCannotWrite  = class(ESMSException);
 
-  ESMSCannotChangeMemory = class(ESMSException);
-
 {===============================================================================
 --------------------------------------------------------------------------------
                               TStaticMemoryStream
@@ -72,21 +70,12 @@ type
 ===============================================================================}
 
 type
-  TStaticMemoryStream = class(TStream)
-  private
-    fMemory:    Pointer;
-    fSize:      TMemSize;
-    fPosition:  Int64;
-  protected
-    Function GetSize: Int64; override;
-    procedure SetSize(const NewValue: Int64); override;
+  TStaticMemoryStream = class(TCustomMemoryStream)
   public
     constructor Create(Memory: Pointer; Size: TMemSize); overload;
-    Function Read(var Buffer; Count: LongInt): LongInt; override;
     Function Write(const Buffer; Count: LongInt): LongInt; override;
-    Function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
-    property Memory: Pointer read fMemory;
-    property Size: TMemSize read fSize;
+    procedure LoadFromStream(Stream: TStream); virtual;
+    procedure LoadFromFile(const FileName: String); virtual;
   end;
 
 {===============================================================================
@@ -102,9 +91,19 @@ type
   TWritableStaticMemoryStream = class(TStaticMemoryStream)
   public
     Function Write(const Buffer; Count: LongInt): LongInt; override;
+  {
+    LoadFromStream loads as many bytes as can fit into the internal static
+    memory.
+    If less bytes is loaded than is the size of internal memory, then any bytes
+    in the internal memory above this count are left unchanged.
+  }
+    procedure LoadFromStream(Stream: TStream); override;
   end;
 
 implementation
+
+uses
+  StrRect;
 
 {$IFDEF FPC_DisableWarns}
   {$DEFINE FPCDWM}
@@ -121,25 +120,6 @@ implementation
 {===============================================================================
     TStaticMemoryStream - implementation
 ===============================================================================}
-
-{-------------------------------------------------------------------------------
-    TStaticMemoryStream - protected methods
--------------------------------------------------------------------------------}
-
-Function TStaticMemoryStream.GetSize: Int64;
-begin
-Result := Int64(fSize);
-end;
-
-//------------------------------------------------------------------------------
-
-{$IFDEF FPCDWM}{$PUSH}W5024{$ENDIF}
-procedure TStaticMemoryStream.SetSize(const NewValue: Int64);
-begin
-raise ESMSCannotChangeMemory.Create('TStaticMemoryStream.SetSize: Cannot change size of static memory.');
-end;
-{$IFDEF FPCDWM}{$POP}{$ENDIF}
-
 {-------------------------------------------------------------------------------
     TStaticMemoryStream - public methods
 -------------------------------------------------------------------------------}
@@ -147,30 +127,8 @@ end;
 constructor TStaticMemoryStream.Create(Memory: Pointer; Size: TMemSize);
 begin
 inherited Create;
-fMemory := Memory;
-fSize := Size;
-fPosition := 0;
-end;
-
-//------------------------------------------------------------------------------
-
-Function TStaticMemoryStream.Read(var Buffer; Count: LongInt): LongInt;
-begin
-If (Count > 0) and (fPosition >= 0) then
-  begin
-    Result := Int64(fSize) - fPosition;
-    If Result > 0 then
-      begin
-        If Result > Count then
-          Result := Count;
-      {$IFDEF FPCDWM}{$PUSH}W4055{$ENDIF}
-        Move(Pointer(PtrUInt(fMemory) + PtrUInt(fPosition))^,Buffer,Result);
-        Inc(fPosition,Result);
-      {$IFDEF FPCDWM}{$POP}{$ENDIF}
-      end
-    else Result := 0;
-  end
-else Result := 0;
+SetPointer(Memory,Size);
+Position := 0;
 end;
 
 //------------------------------------------------------------------------------
@@ -187,14 +145,26 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TStaticMemoryStream.Seek(const Offset: Int64; Origin: TSeekOrigin): Int64;
+{$IFDEF FPCDWM}{$PUSH}W5024{$ENDIF}
+procedure TStaticMemoryStream.LoadFromStream(Stream: TStream);
 begin
-case Origin of
-  soBeginning:  fPosition := Offset;
-  soCurrent:    fPosition := fPosition + Offset;
-  soEnd:        fPosition := Int64(fSize) + Offset;
+raise ESMSCannotWrite.Create('TStaticMemoryStream.LoadFromStream: Cannot load into static memory.');
 end;
-Result := fPosition;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
+
+//------------------------------------------------------------------------------
+
+procedure TStaticMemoryStream.LoadFromFile(const FileName: String);
+var
+  FileStream: TFileStream;
+begin
+FileStream := TFileStream.Create(StrToRTL(FileName),fmOpenRead or fmShareDenyWrite);
+try
+  FileStream.Seek(0,soBeginning);
+  LoadFromStream(FileStream);
+finally
+  FileStream.Free;
+end;
 end;
 
 
@@ -214,21 +184,32 @@ end;
 
 Function TWritableStaticMemoryStream.Write(const Buffer; Count: LongInt): LongInt;
 begin
-If (Count > 0) and (fPosition >= 0) then
+If (Count > 0) and (Position >= 0) then
   begin
-    Result := Int64(fSize) - fPosition;
+    Result := Size - Position;
     If Result > 0 then
       begin
         If Result > Count then
           Result := Count;
       {$IFDEF FPCDWM}{$PUSH}W4055{$ENDIF}
-        Move(Buffer,Pointer(PtrUInt(fMemory) + PtrUInt(fPosition))^,Result);
-        Inc(fPosition,Result);
+        Move(Buffer,Pointer(PtrUInt(Memory) + PtrUInt(Position))^,Result);
+       Position := Position + Result;
       {$IFDEF FPCDWM}{$POP}{$ENDIF}
       end
     else Result := 0;
   end
 else Result := 0;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TWritableStaticMemoryStream.LoadFromStream(Stream: TStream);
+begin
+Stream.Seek(0,soBeginning);
+If (Stream.Size - Stream.Position) > Size then
+  Stream.ReadBuffer(Memory^,Size)
+else
+  Stream.ReadBuffer(Memory^,LongInt(Stream.Size - Stream.Position));
 end;
 
 end.

@@ -16,9 +16,9 @@
 
   Version 1.1 (2021-03-12)
 
-  Last change 2021-03-12
+  Last change 2022-09-24
 
-  ©2017-2021 František Milt
+  ©2017-2022 František Milt
 
   Contacts:
     František Milt: frantisek.milt@gmail.com
@@ -42,7 +42,8 @@
 unit StaticMemoryStream;
 
 {$IFDEF FPC}
-  {$MODE Delphi}
+  {$MODE ObjFPC}
+  {$MODESWITCH DuplicateLocals+}
   {$DEFINE FPC_DisableWarns}
   {$MACRO ON}
 {$ENDIF}

@@ -35,12 +35,12 @@
       github.com/TheLazyTomcat/Lib.StaticMemoryStream
 
   Dependencies:
-   *AuxExceptions - github.com/TheLazyTomcat/Lib.AuxExceptions
+  * AuxExceptions - github.com/TheLazyTomcat/Lib.AuxExceptions
     AuxTypes      - github.com/TheLazyTomcat/Lib.AuxTypes
     StrRect       - github.com/TheLazyTomcat/Lib.StrRect
 
-  Library AuxExceptions is required only when rebasing local exception
-  classes (see symbol StaticMemoryStream_UseAuxExceptions for details).
+  Library AuxExceptions is required only when rebasing local exception classes
+  (see symbol StaticMemoryStream_UseAuxExceptions for details).
 
   Indirect dependencies:
     SimpleCPUID - github.com/TheLazyTomcat/Lib.SimpleCPUID
